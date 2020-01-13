@@ -20,6 +20,31 @@ epsilon = 0.9           # Chance of randomly selected action instead of followin
 eps_decay_rate = 0.005  # Decay rate of epsilon
 min_epsilon = 0.01      # Do not decay epsilon below this point
 
+qtable_size = 20 # Instead of 84x84 observation space, reduce to this dimension
+
+# State is a tuple: (selected_unit (ID), marine_loc_x, marine_loc_y, beacon_centre_loc_x, beacon_centre_loc_y)
+def get_state(observation):
+	"""
+	Returns a simplified version of the game state:
+	marine_selected - 0 or 1 (False/True)
+	marine_location_x - int between 0 and qtable_size
+	marine_location_y - int between 0 and qtable_size
+	beacon_centre_location_x - int between 0 and qtable_size
+	beacon_centre_location_y - int between 0 and qtable_size
+	"""
+	marine_sel = 0 # False, except as int (to represent everything as int)
+	if FUNCTIONS.Attack_screen.id in observation.available_actions:
+		# _PLAYER_SELF has one of their own units selected
+		marine_sel = 1 # True, except as int (to represent everything as int)
+
+	player_relative = observation.feature_screen.player_relative
+	marine_location = np.mean(_xy_locs(player_relative == _PLAYER_SELF), axis=0).round()
+	m_loc_reduced = tuple(coordinate / qtable_size for coordinate in marine_location)
+	beacon_centre_location = np.mean(_xy_locs(player_relative == _PLAYER_NEUTRAL), axis=0).round()
+	b_cen_reduced = tuple(coordinate / qtable_size for coordinate in beacon_centre_location)
+
+	return (marine_sel, *(m_loc_reduced), *(b_cen_reduced))
+
 # Functional actions for this environment
 NO_OP = FUNCTIONS.no_op()
 SELECT_ARMY = FUNCTIONS.select_army('select')
@@ -40,11 +65,11 @@ class MoveToBeacon_hardcoded(base_agent.BaseAgent):
 	selected_action = None
 
 	def step(self, obs):
-		super(MoveToBeacon, self).step(obs)
+		super(MoveToBeacon_hardcoded, self).step(obs)
+		print(get_state(obs.observation))
 		if self.no_op_counter == self.op_every:
 			if FUNCTIONS.Attack_screen.id in obs.observation.available_actions:
 				# Army units selected
-				print(obs.observation.feature_screen.player_relative)
 				player_relative = obs.observation.feature_screen.player_relative
 				beacon_centre_location = np.mean(_xy_locs(player_relative == _PLAYER_NEUTRAL), axis=0).round()
 				self.selected_action = ATTACK_MOVE(beacon_centre_location)
