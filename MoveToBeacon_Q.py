@@ -2,6 +2,8 @@ from pysc2.agents import base_agent
 from pysc2.lib import actions
 from pysc2.lib import features
 
+from math import sqrt
+
 import numpy as np
 
 _PLAYER_SELF = features.PlayerRelative.SELF
@@ -99,10 +101,18 @@ class MoveToBeacon_Q_rich_noselect(base_agent.BaseAgent):
 
 	# Store the previous location in case the API loses the marine's location, tends to happen from time to time.
 	q_table = generate_q_table(agent_using_select=False)
+	score = 0
 	prev_marine_loc = np.zeros(2)
 
+	def reset(self):
+		# Runs at the start of every episode
+	    super(MoveToBeacon_Q_rich_noselect, self).reset()
+	    self.score = 0
+
 	def step(self, obs):
-		super(MoveToBeacon_Q, self).step(obs)
+		super(MoveToBeacon_Q_rich_noselect, self).step(obs)
+		# TODO: WARNING - Reward is reward for PREVIOUS action, so obs.reward is for last action
+		#   Addendum: prev_marine_loc instead of previous state to update Q table with
 		self.state = get_state(obs.observation)
 
 		if self.state[1] == 0 and self.state[2] == 0:
@@ -114,9 +124,9 @@ class MoveToBeacon_Q_rich_noselect(base_agent.BaseAgent):
 			self.prev_marine_loc[1] = self.state[2]
 
 		self.dist_to_beacon = sqrt(abs(self.state[1]-self.state[3])**2 + abs(self.state[2]-self.state[4])**2)
-		print("dist_to_beacon = " + self.dist_to_beacon)
-
-		print("reward = ", obs.reward)
+		
+		# print("dist_to_beacon = " + str(self.dist_to_beacon))
+		# print("reward = " + obs.reward)
 		return NO_OP
 
 
@@ -144,9 +154,9 @@ class MoveToBeacon_Q_rich(base_agent.BaseAgent):
 			prev_marine_loc[1] = state[2]
 
 		dist_to_beacon = sqrt(abs(state[1]-state[3])**2 + abs(state[2]-state[4])**2)
+		
 		print("dist_to_beacon = " + dist_to_beacon)
-
-		print("reward = ", obs.reward)
+		print("reward = " + obs.reward)
 		return NO_OP
 
 
