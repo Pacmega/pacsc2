@@ -17,7 +17,7 @@ def ATTACK_MOVE(target):
 
 # Q-learning settings
 field_size = 84 # TODO: this probably shouldn't be hardcoded
-pixels_per_bucket = 4
+pixels_per_bucket = 2
 nr_buckets = int(round(field_size / pixels_per_bucket)) # Instead of full size observation space, reduce to this size
 
 def get_state(observation):
@@ -69,7 +69,6 @@ class MoveToBeacon_hardcoded(base_agent.BaseAgent):
 		super(MoveToBeacon_hardcoded, self).step(obs)
 		# TODO: WARNING - Reward is reward for PREVIOUS action, so obs.reward is for last action
 		print(get_state(obs.observation))
-		print(obs.reward)
 		if self.no_op_counter == self.op_every:
 			if FUNCTIONS.Attack_screen.id in obs.observation.available_actions:
 				# Army units selected

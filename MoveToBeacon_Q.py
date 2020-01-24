@@ -1,3 +1,6 @@
+# TODO: document that I would've like to implement an agent for a much more sparse reward environment,
+#   but didn't have time to implement the systems that might make that possible
+
 from pysc2.agents import base_agent
 from pysc2.lib import actions
 from pysc2.lib import features
@@ -17,13 +20,15 @@ SELECT_ARMY = FUNCTIONS.select_army('select')
 def ATTACK_MOVE(target):
  return FUNCTIONS.Attack_screen("now", target)
 
-agent_actions = [SELECT_ARMY, ATTACK_MOVE]
+# Action NONE is only for the first time, to make sure no reward is given. Can't be selected.
+action_list = ['SELECT_ARMY', "MOVE_UP", "MOVE_DOWN", "MOVE_LEFT", "MOVE_RIGHT",
+				"MOVE_UPLEFT", "MOVE_UPRIGHT", "MOVE_DOWNLEFT", "MOVE_DOWNRIGHT", "NONE"]
 
 # Agent settings
 discount = 0.95         # Discount future rewards
 
 learning_rate = 0.1     # How heavily Q-values are changed based on one experience
-learn_decay = 0.0001    # Decay of learning rate
+learn_decay = 0.001    # Decay of learning rate
 min_learn_rate = 0.005  # Do not decay learning rate below this point
 
 epsilon = 0.9           # Chance of randomly selected action instead of following policy
@@ -32,27 +37,23 @@ min_epsilon = 0.01      # Do not decay epsilon below this point
 
 # Q-learning settings
 field_size = 84 # TODO: this probably shouldn't be hardcoded
-pixels_per_bucket = 4
+pixels_per_bucket = 8
 nr_buckets = int(round(field_size / pixels_per_bucket)) # Instead of full size observation space, reduce to this size
+components_in_table = 5 # Unit selected, Marine X & Y, Beacon X & Y
 
-def generate_q_table(agent_using_select):
-	if agent_using_select:
-		components_in_table = 3
-		possible_actions = 3		
+def generate_q_table(diagonal_move_enabled=False):
+
+	# possible actions: select army + either 4 directional or 8 directional movement
+	if diagonal_move_enabled:
+		possible_actions = 9
 	else:
-		components_in_table = 2
-		possible_actions = 2
+		possible_actions = 5
 
 	discrete_obs_space_size = [nr_buckets] * components_in_table
 	q_table = np.zeros(shape=(discrete_obs_space_size + [possible_actions]))
 	print("Q table generated with shape {}".format(q_table.shape))
 	return q_table
 
-# get_state() returns five values. Only three of those are useful for the Q-table:
-#   marine_selected, beacon_x and beacon_y.
-# The other two values are useful to calculate a reward for approaching the beacon, 
-#   or entirely disregarded if we only reward reaching the beacon itself.
-# Coordinates are reduced to fit into the Q-table using nr_buckets.
 def get_state(observation):
 	"""
 	Returns a simplified version of the game state:
@@ -91,26 +92,32 @@ def _xy_locs(mask):
 	return list(zip(x, y))
 
 
-class MoveToBeacon_Q_rich_noselect(base_agent.BaseAgent):
+class MoveToBeacon_Q_nondiag(base_agent.BaseAgent):
 	"""A Q-learning agent that is rewarded both for approaching and for reaching the beacon."""
 	# Variables used
 	op_every = 10 # Keep a slightly human-like amount of Actions Per Minute
 	no_op_counter = 0
-	army_selected = False
-	selected_action = None
-
-	# Store the previous location in case the API loses the marine's location, tends to happen from time to time.
-	q_table = generate_q_table(agent_using_select=False)
+	
+	q_table = generate_q_table(diagonal_move_enabled=False)
 	score = 0
+	prev_action = action_list.index("NONE")
+	
+	# Store the previous location in case the API loses the marine's location,
+	#   tends to happen from time to time when the marine touches the beacon.
 	prev_marine_loc = np.zeros(2)
+
+	# def calc_reward(self, reward):
+		
 
 	def reset(self):
 		# Runs at the start of every episode
-	    super(MoveToBeacon_Q_rich_noselect, self).reset()
+	    super(MoveToBeacon_Q_nondiag, self).reset()
 	    self.score = 0
+	    self.prev_action = action_list.index("NONE")
+	    prev_marine_loc = np.zeros(2)
 
 	def step(self, obs):
-		super(MoveToBeacon_Q_rich_noselect, self).step(obs)
+		super(MoveToBeacon_Q_nondiag, self).step(obs)
 		# TODO: WARNING - Reward is reward for PREVIOUS action, so obs.reward is for last action
 		#   Addendum: prev_marine_loc instead of previous state to update Q table with
 		self.state = get_state(obs.observation)
@@ -127,79 +134,4 @@ class MoveToBeacon_Q_rich_noselect(base_agent.BaseAgent):
 		
 		# print("dist_to_beacon = " + str(self.dist_to_beacon))
 		# print("reward = " + obs.reward)
-		return NO_OP
-
-
-class MoveToBeacon_Q_rich(base_agent.BaseAgent):
-	"""A Q-learning agent that is rewarded both for approaching and for reaching the beacon."""
-	# Variables used
-	op_every = 10 # Keep a slightly human-like amount of Actions Per Minute
-	no_op_counter = 0
-	army_selected = False
-	selected_action = None
-
-	# Store the previous location in case the API loses the marine's location, tends to happen from time to time. No idea why.
-	prev_marine_loc = np.zeros(2)
-
-	def step(self, obs):
-		super(MoveToBeacon_Q, self).step(obs)
-		state = get_state(obs.observation)
-
-		if state[1] == 0 and state[2] == 0:
-			# API failed to report Marine location, reuse last correct coordinates
-			state[1] = prev_marine_loc[0]
-			state[2] = prev_marine_loc[1]
-		else:
-			prev_marine_loc[0] = state[1]
-			prev_marine_loc[1] = state[2]
-
-		dist_to_beacon = sqrt(abs(state[1]-state[3])**2 + abs(state[2]-state[4])**2)
-		
-		print("dist_to_beacon = " + dist_to_beacon)
-		print("reward = " + obs.reward)
-		return NO_OP
-
-
-class MoveToBeacon_Q_sparse_noselect(base_agent.BaseAgent):
-	"""
-	A Q-learning agent that only receives a reward if/when it reaches the beacon.
-	Selecting the marine has been taken out of the equation, allowing for quicker results
-	"""
-	
-	# Variables used
-	op_every = 10 # Keep a slightly human-like amount of Actions Per Minute
-	no_op_counter = 0
-	army_selected = False
-	selected_action = None
-
-	# Store the previous location in case the API loses the marine's location, tends to happen from time to time. No idea why.
-	prev_marine_loc = np.zeros(2)
-
-	def step(self, obs):
-		super(MoveToBeacon_Q, self).step(obs)
-		new_state = get_state(obs.observation)
-		# No need to check if marine_location is okay, not using it
-		print("Reminder to check if marine_location is NOT [0, 0], since that messes with reward calculation")
-		print("reward = ", obs.reward)
-		return NO_OP
-
-
-class MoveToBeacon_Q_sparse(base_agent.BaseAgent):
-	"""A Q-learning agent that only receives a reward if/when it reaches the beacon."""
-	
-	# Variables used
-	op_every = 10 # Keep a slightly human-like amount of Actions Per Minute
-	no_op_counter = 0
-	army_selected = False
-	selected_action = None
-
-	# Store the previous location in case the API loses the marine's location, tends to happen from time to time. No idea why.
-	prev_marine_loc = np.zeros(2)
-
-	def step(self, obs):
-		super(MoveToBeacon_Q, self).step(obs)
-		new_state = get_state(obs.observation)
-		# No need to check if marine_location is okay, not using it
-		print("Reminder to check if marine_location is NOT [0, 0], since that messes with reward calculation")
-		print("reward = ", obs.reward)
 		return NO_OP
